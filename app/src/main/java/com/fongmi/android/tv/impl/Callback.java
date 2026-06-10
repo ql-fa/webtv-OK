@@ -2,6 +2,8 @@ package com.fongmi.android.tv.impl;
 
 import androidx.annotation.NonNull;
 
+import com.fongmi.android.tv.utils.Notify;
+
 import java.io.IOException;
 
 import okhttp3.Call;
@@ -22,6 +24,7 @@ public class Callback implements okhttp3.Callback {
     }
 
     public void error(String msg) {
+        Notify.show(msg);
     }
 
     @Override

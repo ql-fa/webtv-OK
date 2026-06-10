@@ -24,11 +24,49 @@
 -dontwarn okhttp3.**
 -keep class okio.** { *; }
 -keep class okhttp3.** { *; }
+-keep class com.github.catvod.net.OkHttp { *; }
+-keep class com.github.catvod.net.OkHttp$* { *; }
+
+# SSL Trust - 增强版
+-keepclassmembers class okhttp3.OkHttpClient$Builder {
+    public *;
+}
+-keepclassmembers class okhttp3.OkHttpClient {
+    public *;
+}
+-dontwarn javax.net.ssl.*
+-keep class javax.net.ssl.SSLContext { *; }
+-keep class javax.net.ssl.TrustManager { *; }
+-keep class javax.net.ssl.X509TrustManager { *; }
+-keepclassmembers class javax.net.ssl.X509TrustManager {
+    public *;
+}
+-keep class com.github.catvod.net.OkHttp$* { *; }
+-keepclassmembers class com.github.catvod.net.OkHttp {
+    public *;
+}
+-keep class com.github.catvod.net.OkHttp { *; }
+
+# 保留 lambda 表达式
+-keepclassmembers class * {
+    @javax.net.ssl.* <methods>;
+}
+-keepclassmembers class * {
+    @androidx.annotation.* <methods>;
+}
+-dontwarn javax.net.ssl.**
 
 # CatVod
 -keep class com.github.catvod.Proxy { *; }
 -keep class com.github.catvod.crawler.** { *; }
 -keep class * extends com.github.catvod.crawler.Spider
+
+# TV App
+-keep class com.fongmi.android.tv.impl.Callback { *; }
+-keepclassmembers class com.fongmi.android.tv.impl.Callback {
+    public *;
+}
+-keep class com.fongmi.android.tv.impl.** { *; }
 
 # Jianpian
 -keep class com.p2p.** { *; }

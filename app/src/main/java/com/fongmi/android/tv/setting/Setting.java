@@ -260,7 +260,20 @@ public class Setting {
     }
 
     public static boolean hasFileAccess() {
-        return hasLegacyReadAccess();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return hasMediaPermissions();
+        } else {
+            return hasLegacyReadAccess();
+        }
+    }
+
+    private static boolean hasMediaPermissions() {
+        int images = ContextCompat.checkSelfPermission(App.get(), Manifest.permission.READ_MEDIA_IMAGES);
+        int video = ContextCompat.checkSelfPermission(App.get(), Manifest.permission.READ_MEDIA_VIDEO);
+        int audio = ContextCompat.checkSelfPermission(App.get(), Manifest.permission.READ_MEDIA_AUDIO);
+        return images == PackageManager.PERMISSION_GRANTED 
+            || video == PackageManager.PERMISSION_GRANTED 
+            || audio == PackageManager.PERMISSION_GRANTED;
     }
 
     private static boolean hasLegacyReadAccess() {

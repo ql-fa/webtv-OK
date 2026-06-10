@@ -4468,7 +4468,7 @@
     const PAN_CHECKABLE_DISK_TYPES = new Set(window.WEBHOME_CONFIG.pan.checkableDiskTypes || ["quark", "aliyun", "baidu", "uc", "tianyi", "xunlei", "123", "115", "mobile"]);
     const PAN_HEALTH_PRIORITY = { ok: 0, locked: 1, pending: 2, idle: 3, unsupported: 4, uncertain: 5, bad: 6 };
     const PAGE_OPENED_AT = window.WEBHOME_PAGE_OPENED_AT || Date.now();
-    const GRID_INITIAL_ROWS = 3;
+    const GRID_INITIAL_ROWS = 6;
     const GRID_APPEND_ROWS = 2;
     const RECENT_UI_TTL_MS = 30000;
     const DETAIL_TEXT_CLAMP_LIMIT = 150;
@@ -5821,10 +5821,6 @@
     }
 
     function useFallbackRecommendations() {
-      if (preferenceItems().length) {
-        useNostrRecommendationsIfReady();
-        return;
-      }
       if (state.recommendationSource === "fallback") return;
       state.recommendationSource = "fallback";
       ensureRecommendationFallback();
@@ -6005,7 +6001,21 @@
     }
 
     function tmdbFallbackUrl(type, page) {
-      const endpoint = type === "airing" ? "tv/airing_today" : "trending/all/day";
+      const endpointMap = {
+        "trending_all_day": "trending/all/day",
+        "trending_all_week": "trending/all/week",
+        "trending_movie_day": "trending/movie/day",
+        "trending_tv_day": "trending/tv/day",
+        "movie_popular": "movie/popular",
+        "movie_top_rated": "movie/top_rated",
+        "movie_now_playing": "movie/now_playing",
+        "movie_upcoming": "movie/upcoming",
+        "tv_popular": "tv/popular",
+        "tv_top_rated": "tv/top_rated",
+        "tv_on_the_air": "tv/on_the_air",
+        "airing": "tv/airing_today"
+      };
+      const endpoint = endpointMap[type] || "trending/all/day";
       const url = new URL(`${window.WEBHOME_CONFIG.tmdb.apiBase}/${endpoint}`);
       url.searchParams.set("api_key", tmdbApiKey());
       url.searchParams.set("language", window.WEBHOME_CONFIG.tmdb.language);
@@ -6124,6 +6134,8 @@
       const title = item.title || item.name || item.original_title || item.original_name || "未命名";
       const date = item.release_date || item.first_air_date || "";
       const mediaType = list.mediaType || item.media_type || "movie";
+      const popularity = Number(item.popularity || 0);
+      const people = Math.max(0, Math.floor(popularity / 10));
       return {
         id: `tmdb:${mediaType}:${item.id}`,
         source: "tmdb",
@@ -6138,8 +6150,9 @@
         remark: "",
         desc: item.overview || `${list.title || "搜索"} · ${title}`,
         releaseDate: date,
-        popularity: item.popularity || 0,
+        popularity,
         voteAverage: item.vote_average || 0,
+        people,
         baseRank: index + 1
       };
     }
@@ -6360,10 +6373,6 @@
     }
 
     function prefetchRecommendationFallback() {
-      if (preferenceItems().length) {
-        useNostrRecommendationsIfReady();
-        return;
-      }
       if (state.fallbackPage.loading || state.fallbackPage.loaded || state.fallbackPage.done) return;
       loadRecommendationFallback().catch((e) => {
         state.fallbackPage.loading = false;
@@ -6375,7 +6384,6 @@
     }
 
     function ensureRecommendationFallback() {
-      if (!nostrReadyForFallback()) return;
       prefetchRecommendationFallback();
     }
 
@@ -6384,10 +6392,10 @@
       clearTimeout(state.relay.fallbackPrefetchTimer);
       const elapsed = Date.now() - PAGE_OPENED_AT;
       state.relay.fallbackPrefetchTimer = setTimeout(() => {
-        if (!preferenceItems().length) prefetchRecommendationFallback();
+        prefetchRecommendationFallback();
       }, Math.max(0, FALLBACK_PREFETCH_MS - elapsed));
       state.relay.fallbackTimer = setTimeout(() => {
-        if (!preferenceItems().length) useFallbackRecommendations();
+        useFallbackRecommendations();
       }, Math.max(0, FALLBACK_SHOW_MS - elapsed));
     }
 
@@ -6415,13 +6423,16 @@
 
     async function loadRecommendationFallback() {
       const sources = [
-        { type: "trending", id: "tmdb-trending", title: "今日趋势" },
-        { type: "airing", id: "tv-airing-today", title: "今日播出", mediaType: "tv" }
+        { type: "trending_all_day", id: "tmdb-trending-today", title: "今日趋势" },
+        { type: "trending_all_week", id: "tmdb-trending-week", title: "本周趋势" },
+        { type: "movie_popular", id: "tmdb-movie-popular", title: "热门电影", mediaType: "movie" },
+        { type: "movie_top_rated", id: "tmdb-movie-top-rated", title: "高分电影", mediaType: "movie" },
+        { type: "movie_now_playing", id: "tmdb-movie-now-playing", title: "正在热映", mediaType: "movie" },
+        { type: "tv_popular", id: "tmdb-tv-popular", title: "热门剧集", mediaType: "tv" },
+        { type: "tv_top_rated", id: "tmdb-tv-top-rated", title: "高分剧集", mediaType: "tv" },
+        { type: "tv_on_the_air", id: "tmdb-tv-on-the-air", title: "正在播出", mediaType: "tv" },
+        { type: "airing", id: "tmdb-tv-airing-today", title: "今日播出", mediaType: "tv" }
       ];
-      if (preferenceItems().length) {
-        useNostrRecommendationsIfReady();
-        return;
-      }
       state.fallback = [];
       state.fallbackPage = { sourceIndex: 0, page: 0, loading: true, loaded: false, done: false };
       setStatus("tmdb", "请求推荐兜底");
@@ -6429,19 +6440,29 @@
       for (let index = 0; index < sources.length; index++) {
         const source = sources[index];
         try {
-          const body = await requestJson(tmdbFallbackUrl(source.type, 1), 18);
-          const items = (body.results || [])
-            .filter((item) => item.poster_path && (item.media_type === "movie" || item.media_type === "tv" || source.mediaType))
-            .map((item, index) => normalizeTmdb(item, source, index))
-            .filter(hasPoster);
-          if (preferenceItems().length) {
-            useNostrRecommendationsIfReady();
-            return;
+          const maxPages = 3;
+          let allItems = [];
+          for (let page = 1; page <= maxPages; page++) {
+            try {
+              const body = await requestJson(tmdbFallbackUrl(source.type, page), 18);
+              const items = (body.results || [])
+                .filter((item) => item.poster_path && (item.media_type === "movie" || item.media_type === "tv" || source.mediaType))
+                .map((item, itemIndex) => normalizeTmdb(item, source, (page - 1) * 20 + itemIndex))
+                .filter(hasPoster);
+              if (items.length) {
+                allItems = allItems.concat(items);
+              }
+              if (!body.results || body.results.length === 0 || page >= (body.total_pages || 1)) {
+                break;
+              }
+            } catch (e) {
+              break;
+            }
           }
-          if (items.length) {
-            state.fallback = uniqueMedia(items);
-            state.fallbackPage = { sourceIndex: index, page: 1, total: body.total_pages || 1, loading: false, loaded: true, done: false };
-            setStatus("tmdb", "推荐兜底已加载");
+          if (allItems.length) {
+            state.fallback = uniqueMedia(allItems);
+            state.fallbackPage = { sourceIndex: index, page: 1, total: 3, loading: false, loaded: true, done: false };
+            setStatus("tmdb", `推荐兜底已加载 ${state.fallback.length} 条`);
             if (state.recommendationSource === "fallback") renderActiveGrid();
             return;
           }
@@ -6887,10 +6908,16 @@
 
     function renderHomeContent() {
       const recommend = state.activeList === "all";
-      $("recommendSection").style.display = recommend ? "" : "none";
-      $("listSection").style.display = recommend ? "none" : "";
+      $("recommendSection").style.display = "";
+      $("listSection").style.display = "none";
       if (recommend) renderRecommendations();
-      else renderLists();
+      else {
+        const list = getList(state.activeList);
+        if (list && (!state.catalogPage[state.activeList] || !state.catalogPage[state.activeList].loaded)) {
+          loadCatalogList(state.activeList);
+        }
+        renderListsToRecommendRail();
+      }
       observeInfiniteScroll();
       requestAnimationFrame(ensureScrollablePage);
     }
@@ -6981,32 +7008,72 @@
     }
 
     function renderRecommendations() {
-      const items = filterBlocked(preferenceItems());
-      if (items.length) {
-        state.recommendationSource = "nostr";
-        clearTimeout(state.relay.fallbackTimer);
-        fillGrid($("recommendRail"), items);
-        updateBlockSelectUi();
+      state.recommendationSource = "fallback";
+      ensureRecommendationFallback();
+      if (state.fallbackPage.loading && !state.fallback.length) {
+        showGridStatus($("recommendRail"), "推荐兜底加载中...");
         return;
       }
-      if (state.recommendationSource === "nostr") state.recommendationSource = "pending";
-      if (state.recommendationSource === "pending" && !nostrReadyForFallback()) {
-        showGridStatus($("recommendRail"), "Nostr 推荐同步中...");
-      } else {
-        state.recommendationSource = "fallback";
-        ensureRecommendationFallback();
-        if (state.fallbackPage.loading && !state.fallback.length) {
-          showGridStatus($("recommendRail"), "推荐兜底加载中...");
-          return;
+      fillGrid($("recommendRail"), filterBlocked(state.fallback.length ? state.fallback : ranked(allItems())));
+      updateBlockSelectUi();
+    }
+
+    function renderListsToRecommendRail() {
+      const rail = $("recommendRail");
+      if (state.activeList === "recent") {
+        if (state.recent.loading && !state.recent.loaded) {
+          showGridStatus(rail, "读取最近观看...");
+        } else if (state.recent.error) {
+          showGridStatus(rail, "最近观看读取失败");
+        } else if (!state.recent.loaded) {
+          showGridStatus(rail, "点击后读取最近观看");
+        } else {
+          fillGrid(rail, state.recent.items || []);
         }
-        fillGrid($("recommendRail"), filterBlocked(state.fallback.length ? state.fallback : ranked(allItems())));
-        updateBlockSelectUi();
+        return;
+      }
+      if (state.activeList === "live") {
+        const body = document.createElement("div");
+        const card = document.createElement("button");
+        card.className = "live-entry-card focusable";
+        card.type = "button";
+        card.innerHTML = `
+          <span class="live-icon" aria-hidden="true">
+            <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 19v2"/><path d="m9 3 3 3 3-3"/></svg>
+          </span>
+          <div class="live-copy">
+            <h5>观看直播</h5>
+            <p>频道分组、节目单、收藏频道和多线路已接入。</p>
+            <div class="live-tags"><span class="live-tag">频道分组</span><span class="live-tag">节目单</span><span class="live-tag">收藏</span></div>
+          </div>
+          <span class="live-action">继续观看</span>
+        `;
+        card.addEventListener("click", openLiveHome);
+        body.appendChild(card);
+        rail.replaceChildren(body);
+        return;
+      }
+      const lists = visibleTmdbLists().filter((list) => list.id === state.activeList);
+      if (!lists.length) {
+        activateListPanel("");
+        return;
+      }
+      const list = lists[0];
+      const page = state.catalogPage[list.id];
+      if (page && page.loading) {
+        showGridStatus(rail, "加载中...");
+      } else if (page && page.error) {
+        showGridStatus(rail, "加载失败");
+      } else if (!page || !page.loaded) {
+        showGridStatus(rail, "点击后加载片单");
+      } else {
+        fillGrid(rail, state.catalog[list.id] || []);
       }
     }
 
     function renderActiveGrid() {
       if (state.activeList === "all") renderRecommendations();
-      else renderLists();
+      else renderListsToRecommendRail();
       observeInfiniteScroll();
       requestAnimationFrame(ensureScrollablePage);
     }
@@ -7272,9 +7339,7 @@
     }
 
     function activeMediaGrid() {
-      if (state.activeList === "all") return $("recommendRail");
-      const panel = Array.from($("listStack").querySelectorAll(".list-panel")).find((item) => !item.hidden && item.dataset.listId === state.activeList);
-      return panel && panel.querySelector(".media-grid");
+      return $("recommendRail");
     }
 
     function itemsForGrid(gridId) {
@@ -7359,7 +7424,7 @@
 
     function initialHomeFocus() {
       if (focusScopeRoot() !== document) return null;
-      return findByDataset($("chips"), "chipId", "all") || $("chips").querySelector(".chip.active") || $("chips").querySelector(".chip");
+      return findByDataset($("chips"), "chipId", state.activeList) || findByDataset($("chips"), "chipId", "all") || $("chips").querySelector(".chip.active") || $("chips").querySelector(".chip");
     }
 
     function currentHomeFocus() {
